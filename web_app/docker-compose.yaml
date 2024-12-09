@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+      - '6000:6000'
+    depends_on:
+      - mongodb
+    volumes:
+      - .:/web_application
+
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - '27017:27017'
+    volumes:
+      - ./mongo_data:/data/db
+
+volumes:
+  mongo_data:
