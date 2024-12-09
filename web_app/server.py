@@ -6,9 +6,15 @@ from multiprocessing import Process
 import websockets
 from datetime import datetime
 import json
-from pymongo import MongoClient
+import os
+from jinja2 import Environment, FileSystemLoader
 
 logging.basicConfig(level=logging.INFO)
+
+DATA_FILE = "storage/data.json"
+
+if not os.path.exists("storage"):
+    os.makedirs("storage")
 
 
 class HttpHandler(BaseHTTPRequestHandler):
@@ -18,6 +24,8 @@ class HttpHandler(BaseHTTPRequestHandler):
             self.send_html_file("index.html")
         elif parsed_url.path == "/message.html":
             self.send_html_file("message.html")
+        elif parsed_url.path == "/read":
+            self.show_messages()
         elif parsed_url.path.startswith("/static/"):
             self.send_static_file(parsed_url.path[1:])
         else:
@@ -30,12 +38,18 @@ class HttpHandler(BaseHTTPRequestHandler):
         username = parsed_data.get("username")[0]
         message = parsed_data.get("message")[0]
 
-        message_data = json.dumps({"username": username, "message": message})
+        message_data = {
+            "username": username,
+            "message": message,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+        }
+
+        self.save_message_to_json(message_data)
 
         async def send_message():
             uri = "ws://localhost:6000"
             async with websockets.connect(uri) as websocket:
-                await websocket.send(message_data)
+                await websocket.send(json.dumps(message_data))
 
         asyncio.run(send_message())
 
@@ -65,27 +79,46 @@ class HttpHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_html_file("error.html", 404)
 
+    def save_message_to_json(self, message_data):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+
+        data[message_data["timestamp"]] = {
+            "username": message_data["username"],
+            "message": message_data["message"],
+        }
+
+        with open(DATA_FILE, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4, ensure_ascii=False)
+
+    def show_messages(self):
+        env = Environment(loader=FileSystemLoader("templates"))
+        template = env.get_template("messages_template.html")
+
+        try:
+            with open(DATA_FILE, "r") as file:
+                messages = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            messages = {}
+
+        logging.info(f"Loaded {len(messages)} messages from {DATA_FILE}")
+
+        html_content = template.render(messages=messages)
+
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(html_content.encode("utf-8"))
+
 
 class WebSocketServer:
-    def __init__(self):
-        self.client = MongoClient("mongodb://mongodb:27017/")
-        self.db = self.client["message_db"]
-        self.collection = self.db["messages"]
-
     async def ws_handler(self, websocket):
         async for message in websocket:
             data = json.loads(message)
-
-            date = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-
-            message_data = {
-                "date": date,
-                "username": data["username"],
-                "message": data["message"],
-            }
-
-            self.collection.insert_one(message_data)
-            logging.info(f"Saved message: {message_data}")
+            logging.info(f"Received message: {data}")
 
 
 async def run_websocket_server():

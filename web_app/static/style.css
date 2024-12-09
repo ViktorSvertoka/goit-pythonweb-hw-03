@@ -22,3 +22,7 @@ body {
 textarea {
   height: 250px;
 }
+
+ul {
+  list-style: none;
+}

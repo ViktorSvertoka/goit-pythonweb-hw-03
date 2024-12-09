@@ -1,12 +1,15 @@
+
 FROM python:3.13-slim
 
-WORKDIR /web_application
+WORKDIR /web_app
 
-COPY . /web_application
+COPY requirements.txt /web_app/
 
-RUN pip install --no-cache-dir -r /web_application/requirements.txt
+RUN pip install --no-cache-dir -r /web_app/requirements.txt
+
+COPY . /web_app/
 
 EXPOSE 3000
 EXPOSE 6000
 
-CMD ["python", "main.py"]
+CMD ["python", "server.py"]
